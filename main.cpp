@@ -1,26 +1,22 @@
+#include <cstdlib>
+#define GLFW_INCLUDE_VULKAN
 #include <algorithm>
 #include <cstring>
 #include <iterator>
 #include <string>
 #include <vector>
-#include<map>
-#include <vulkan/vk_platform.h>
-#include <vulkan/vulkan_core.h>
 #define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
+#define VK_USE_PLATFORM_WAYLAND_KHR
 #include "vulkan/vulkan.hpp"
-#include <ranges>
+#include <GLFW/glfw3.h>
 #include <cstdint>
-#include <exception>
 #if defined (__INTELLISENSE__) || !defined(USE_CPP20_MODULLES)
 #include <vulkan/vulkan_raii.hpp>
 #else
 import vulkan_hpp;
 #endif
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
 #include <iostream>
 #include<stdexcept>
-#include <cstdlib>
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
 const std::vector<char const*> validationLayers =
@@ -48,6 +44,9 @@ class  hellotriangle
         vk::raii::Instance instancep = VK_NULL_HANDLE;
         vk::raii::DebugUtilsMessengerEXT debugMessengerp = VK_NULL_HANDLE;
         vk::raii::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
+        vk::raii::Device logicalDevice = VK_NULL_HANDLE;
+        vk::raii::Queue graphicsQueue = VK_NULL_HANDLE;
+        vk::raii::SurfaceKHR surface = VK_NULL_HANDLE;
         void initWindow()
         {
             glfwInit();
@@ -59,7 +58,9 @@ class  hellotriangle
         {
             createInstance();
             SetupDebugMessenger();
+            createSurface();
             pickPhysicalDevice();
+            createLogicalDevice();
         }
         void mainLoop()
         {
@@ -194,8 +195,7 @@ class  hellotriangle
             auto features = physicalDevice.template getFeatures2<vk::PhysicalDeviceFeatures2,
                                                                  vk::PhysicalDeviceVulkan11Features,
                                                                  vk::PhysicalDeviceVulkan13Features,
-                                                                 vk::PhysicalDeviceVulkan14Features,
-                                                                 vk::PhysicalDeviceExtendedDynamicState2FeaturesEXT>();
+                                                                 vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
 
             bool supportRequiredFeatures = features.template get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters &&
                                            features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering &&
@@ -203,4 +203,65 @@ class  hellotriangle
 
             return supportsVulkan1_4 && supportGraphics && supportsAllReqExtensions && supportRequiredFeatures;
         }
-    };
+        //Logical Device
+        void createLogicalDevice()
+        {
+            std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
+            auto graphicsQueueFamilyProperty = std::ranges::find_if(queueFamilyProperties,[](auto const &qfp){return (qfp.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0);});
+            auto graphicIndex = static_cast<uint32_t>(std::distance(queueFamilyProperties.begin(),graphicsQueueFamilyProperty));
+            float queuePriority = 0.5f;
+            vk::DeviceQueueCreateInfo deviceQueueCreateInfo{.queueFamilyIndex = graphicIndex,
+                                                            .queueCount = 1,
+                                                            .pQueuePriorities = &queuePriority};
+            vk::PhysicalDeviceFeatures deviceFeatures;
+            vk::StructureChain<vk::PhysicalDeviceFeatures2,
+                               vk::PhysicalDeviceVulkan11Features,
+                               vk::PhysicalDeviceVulkan13Features,
+                               vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
+            featureChain =
+                {
+                    {},
+                    {.shaderDrawParameters = true},
+                    {.dynamicRendering = true},
+                    {.extendedDynamicState = true}
+                };
+            std::vector<const char*> requiredDeviceExtension =
+                {
+                  vk::KHRSwapchainExtensionName
+                };
+            vk::DeviceCreateInfo deviceCreateInfo
+            {
+                .pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
+                .queueCreateInfoCount = 1,
+                .pQueueCreateInfos = &deviceQueueCreateInfo,
+                .enabledExtensionCount = static_cast<uint32_t>(requiredDeviceExtension.size()),
+                .ppEnabledExtensionNames = requiredDeviceExtension.data()
+            };
+            logicalDevice = vk::raii::Device(physicalDevice,deviceCreateInfo);
+            graphicsQueue = vk::raii::Queue(logicalDevice,graphicIndex,0);
+        }
+        //Suraface creatin
+        void createSurface()
+        {
+            VkSurfaceKHR _surface;
+            if(glfwCreateWindowSurface(*instancep,windowp, VK_NULL_HANDLE, &_surface) != 0)
+            {
+                throw std::runtime_error("Error::Window creation failed");
+            }
+            surface =  vk::raii::SurfaceKHR(instancep,surface);
+
+        }
+};
+int main()
+{
+    try{
+        hellotriangle app;
+        app.run();
+    }
+    catch(const std::exception &e)
+    {
+        std::cerr << e.what() << std::endl;
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
+}
