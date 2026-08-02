@@ -206,9 +206,26 @@ class  hellotriangle
         //Logical Device
         void createLogicalDevice()
         {
+
             std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
-            auto graphicsQueueFamilyProperty = std::ranges::find_if(queueFamilyProperties,[](auto const &qfp){return (qfp.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0);});
-            auto graphicIndex = static_cast<uint32_t>(std::distance(queueFamilyProperties.begin(),graphicsQueueFamilyProperty));
+            uint32_t queueIndex = ~0;
+            for(uint32_t qfpIndex = 0;qfpIndex < queueFamilyProperties.size();qfpIndex++)
+            {
+                if((queueFamilyProperties[qfpIndex].queueFlags & vk::QueueFlagBits::eGraphics) && physicalDevice.getSurfaceSupportKHR(qfpIndex, *surface))
+                {
+                   queueIndex = qfpIndex;
+                   break;
+                }
+            }
+
+            uint32_t temp = 0;
+            auto graphicsQueueFamilyProperty = std::ranges::find_if(queueFamilyProperties,[&](auto const &qfp)
+            {
+                ++temp;
+                return ((qfp.queueFlags & vk::QueueFlagBits::eGraphics) && physicalDevice.getSurfaceSupportKHR(temp, *surface));
+            });
+            auto myQueueIndex = static_cast<uint32_t>(std::distance(queueFamilyProperties.begin(),graphicsQueueFamilyProperty));
+
             float queuePriority = 0.5f;
             vk::DeviceQueueCreateInfo deviceQueueCreateInfo{.queueFamilyIndex = graphicIndex,
                                                             .queueCount = 1,
@@ -239,6 +256,7 @@ class  hellotriangle
             };
             logicalDevice = vk::raii::Device(physicalDevice,deviceCreateInfo);
             graphicsQueue = vk::raii::Queue(logicalDevice,graphicIndex,0);
+
         }
         //Suraface creatin
         void createSurface()
@@ -248,7 +266,7 @@ class  hellotriangle
             {
                 throw std::runtime_error("Error::Window creation failed");
             }
-            surface =  vk::raii::SurfaceKHR(instancep,surface);
+            surface =  vk::raii::SurfaceKHR(instancep,*surface);
 
         }
 };
