@@ -1,8 +1,10 @@
 #include <cstdlib>
+#include <limits>
 #define GLFW_INCLUDE_VULKAN
 #include <algorithm>
 #include <cstring>
-#include <iterator>
+#include <algorithm>
+#include <cstdint>
 #include <string>
 #include <vector>
 #define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
@@ -39,14 +41,25 @@ class  hellotriangle
             cleanup();
         }
     private:
-        GLFWwindow *windowp = nullptr;
+
         vk::raii::Context context;
+        vk::Extent2D swapChainExtent;
+        vk::SurfaceFormatKHR swapChainSurfaceFormat;
+        std::vector<vk::Image> swapChainImages;
+
+        GLFWwindow *windowp = nullptr;
+        vk::raii::SurfaceKHR surface = nullptr;
         vk::raii::Instance instancep = VK_NULL_HANDLE;
         vk::raii::DebugUtilsMessengerEXT debugMessengerp = VK_NULL_HANDLE;
         vk::raii::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
         vk::raii::Device logicalDevice = VK_NULL_HANDLE;
         vk::raii::Queue graphicsQueue = VK_NULL_HANDLE;
-        vk::raii::SurfaceKHR surface = VK_NULL_HANDLE;
+        vk::raii::SwapchainKHR swapChain = VK_NULL_HANDLE;
+
+        std::vector<const char*> requiredDeviceExtension =
+            {
+              vk::KHRSwapchainExtensionName
+            };
         void initWindow()
         {
             glfwInit();
@@ -61,6 +74,7 @@ class  hellotriangle
             createSurface();
             pickPhysicalDevice();
             createLogicalDevice();
+            createSwapChain();
         }
         void mainLoop()
         {
@@ -217,20 +231,10 @@ class  hellotriangle
                    break;
                 }
             }
-
-            uint32_t temp = 0;
-            auto graphicsQueueFamilyProperty = std::ranges::find_if(queueFamilyProperties,[&](auto const &qfp)
+            if(queueIndex == ~0)
             {
-                ++temp;
-                return ((qfp.queueFlags & vk::QueueFlagBits::eGraphics) && physicalDevice.getSurfaceSupportKHR(temp, *surface));
-            });
-            auto myQueueIndex = static_cast<uint32_t>(std::distance(queueFamilyProperties.begin(),graphicsQueueFamilyProperty));
-
-            float queuePriority = 0.5f;
-            vk::DeviceQueueCreateInfo deviceQueueCreateInfo{.queueFamilyIndex = graphicIndex,
-                                                            .queueCount = 1,
-                                                            .pQueuePriorities = &queuePriority};
-            vk::PhysicalDeviceFeatures deviceFeatures;
+                throw std::runtime_error("Error::Could not find a queue for graphics and present.");
+            }
             vk::StructureChain<vk::PhysicalDeviceFeatures2,
                                vk::PhysicalDeviceVulkan11Features,
                                vk::PhysicalDeviceVulkan13Features,
@@ -242,10 +246,11 @@ class  hellotriangle
                     {.dynamicRendering = true},
                     {.extendedDynamicState = true}
                 };
-            std::vector<const char*> requiredDeviceExtension =
-                {
-                  vk::KHRSwapchainExtensionName
-                };
+
+            float queuePriority = 0.5f;
+            vk::DeviceQueueCreateInfo deviceQueueCreateInfo{.queueFamilyIndex = queueIndex,
+                                                            .queueCount = 1,
+                                                            .pQueuePriorities = &queuePriority};
             vk::DeviceCreateInfo deviceCreateInfo
             {
                 .pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
@@ -255,7 +260,13 @@ class  hellotriangle
                 .ppEnabledExtensionNames = requiredDeviceExtension.data()
             };
             logicalDevice = vk::raii::Device(physicalDevice,deviceCreateInfo);
-            graphicsQueue = vk::raii::Queue(logicalDevice,graphicIndex,0);
+            graphicsQueue = vk::raii::Queue(logicalDevice,queueIndex,0);
+
+            //Swap Chain
+            auto surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR(*surface);
+            std::vector<vk::SurfaceFormatKHR> availableFormats = physicalDevice.getSurfaceFormatsKHR(*surface);
+            std::vector<vk::PresentModeKHR> availablePresentModes = physicalDevice.getSurfacePresentModesKHR(*surface);
+
 
         }
         //Suraface creatin
@@ -268,6 +279,67 @@ class  hellotriangle
             }
             surface =  vk::raii::SurfaceKHR(instancep,*surface);
 
+        }
+        //Swap chain creation
+        void createSwapChain()
+        {
+            vk::SurfaceCapabilitiesKHR surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR(*surface);
+            auto swapChainExtent = chooseSwapExtent(surfaceCapabilities);
+            uint32_t minImageCount = chooseSwapMinImageCount(surfaceCapabilities);
+            std::vector<vk::SurfaceFormatKHR> availableFormats = physicalDevice.getSurfaceFormatsKHR(*surface);
+            std::vector<vk::PresentModeKHR> availablePresentModes = physicalDevice.getSurfacePresentModesKHR();
+            auto swapChainSurfaceFormat = chooseSwapSurfaceFormat(availableFormats);
+            vk::SwapchainCreateInfoKHR swapChainCreateInfo{.surface = *surface,
+                                                           .minImageCount = minImageCount,
+                                                           .imageFormat = swapChainSurfaceFormat.format,
+                                                           .imageColorSpace = swapChainSurfaceFormat.colorSpace,
+                                                           .imageExtent = swapChainExtent,
+                                                           .imageArrayLayers = 1,
+                                                           .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
+                                                           .imageSharingMode = vk::SharingMode::eExclusive,
+                                                           .preTransform = surfaceCapabilities.currentTransform,
+                                                           .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
+                                                           .presentMode = chooseSwapPresentMode(availablePresentModes),
+                                                           .clipped = true
+
+            };
+            swapChain = vk::raii::SwapchainKHR(logicalDevice,swapChainCreateInfo);
+            swapChainImages = swapChain.getImages();
+        }
+        //surfaec options
+        vk::SurfaceFormatKHR chooseSwapSurfaceFormat(std::vector<vk::SurfaceFormatKHR> const &availableFormats)
+        {
+            const auto formatIt = std::ranges::find_if(availableFormats,[](const auto &format){return format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear;});
+            return formatIt != availableFormats.end() ? *formatIt : availableFormats[0];
+        }
+        vk::PresentModeKHR chooseSwapPresentMode(std::vector<vk::PresentModeKHR> const &availablePresentMode)
+        {
+            assert(std::ranges::any_of(availablePresentMode,[](auto presentMode){return presentMode == vk::PresentModeKHR::eFifo;}));
+            return std::ranges::any_of(availablePresentMode,[](const vk::PresentModeKHR value){return vk::PresentModeKHR::eMailbox == value;}) ? vk::PresentModeKHR::eMailbox : vk::PresentModeKHR::eFifo;
+        }
+        vk::Extent2D chooseSwapExtent(vk::SurfaceCapabilitiesKHR const &capbilities)
+        {
+            if(capbilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
+            {
+                return capbilities.currentExtent;
+            }
+            int width,height;
+            glfwGetFramebufferSize(windowp, &width,&height);
+            return
+            {
+                std::clamp<uint32_t>(width,capbilities.minImageExtent.width,capbilities.maxImageExtent.width),
+                std::clamp<uint32_t>(height,capbilities.minImageExtent.width,capbilities.maxImageExtent.width)
+
+            };
+        }
+        uint32_t chooseSwapMinImageCount(vk::SurfaceCapabilitiesKHR const &surfaceCapabilities)
+        {
+            auto minImageCount = std::max(3u,surfaceCapabilities.minImageCount);
+            if((0 < surfaceCapabilities.maxImageCount) && (surfaceCapabilities.maxImageCount < minImageCount))
+            {
+                minImageCount = surfaceCapabilities.maxImageCount;
+            }
+            return minImageCount;
         }
 };
 int main()
