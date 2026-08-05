@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <limits>
+#include <vulkan/vulkan_core.h>
 #define GLFW_INCLUDE_VULKAN
 #include <algorithm>
 #include <cstring>
@@ -7,6 +8,8 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <iostream>
+#include<stdexcept>
 #define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 #define VK_USE_PLATFORM_WAYLAND_KHR
 #include "vulkan/vulkan.hpp"
@@ -17,8 +20,7 @@
 #else
 import vulkan_hpp;
 #endif
-#include <iostream>
-#include<stdexcept>
+
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
 const std::vector<char const*> validationLayers =
@@ -42,19 +44,19 @@ class  hellotriangle
         }
     private:
 
-        vk::raii::Context context;
-        vk::Extent2D swapChainExtent;
-        vk::SurfaceFormatKHR swapChainSurfaceFormat;
-        std::vector<vk::Image> swapChainImages;
+        vk::raii::Context          context;
+        vk::Extent2D               swapChainExtent;
+        vk::SurfaceFormatKHR       swapChainSurfaceFormat;
+        std::vector<vk::Image>     swapChainImages;
 
-        GLFWwindow *windowp = nullptr;
-        vk::raii::SurfaceKHR surface = nullptr;
-        vk::raii::Instance instancep = VK_NULL_HANDLE;
-        vk::raii::DebugUtilsMessengerEXT debugMessengerp = VK_NULL_HANDLE;
-        vk::raii::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
-        vk::raii::Device logicalDevice = VK_NULL_HANDLE;
-        vk::raii::Queue graphicsQueue = VK_NULL_HANDLE;
-        vk::raii::SwapchainKHR swapChain = VK_NULL_HANDLE;
+        GLFWwindow                              *windowp = nullptr;
+        vk::raii::SurfaceKHR                     surface = nullptr;
+        vk::raii::Instance                     instancep = nullptr;
+        vk::raii::DebugUtilsMessengerEXT debugMessengerp = nullptr;
+        vk::raii::PhysicalDevice          physicalDevice = nullptr;
+        vk::raii::Device                   logicalDevice = nullptr;
+        vk::raii::Queue                    graphicsQueue = nullptr;
+        vk::raii::SwapchainKHR                 swapChain = nullptr;
 
         std::vector<const char*> requiredDeviceExtension =
             {
@@ -263,9 +265,9 @@ class  hellotriangle
             graphicsQueue = vk::raii::Queue(logicalDevice,queueIndex,0);
 
             //Swap Chain
-            auto surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR(*surface);
-            std::vector<vk::SurfaceFormatKHR> availableFormats = physicalDevice.getSurfaceFormatsKHR(*surface);
-            std::vector<vk::PresentModeKHR> availablePresentModes = physicalDevice.getSurfacePresentModesKHR(*surface);
+
+
+
 
 
         }
@@ -273,11 +275,12 @@ class  hellotriangle
         void createSurface()
         {
             VkSurfaceKHR _surface;
-            if(glfwCreateWindowSurface(*instancep,windowp, VK_NULL_HANDLE, &_surface) != 0)
+            if(glfwCreateWindowSurface(*instancep,windowp, nullptr, &_surface) != 0)
             {
                 throw std::runtime_error("Error::Window creation failed");
             }
-            surface =  vk::raii::SurfaceKHR(instancep,*surface);
+
+            surface =  vk::raii::SurfaceKHR(instancep,_surface);
 
         }
         //Swap chain creation
@@ -287,7 +290,8 @@ class  hellotriangle
             auto swapChainExtent = chooseSwapExtent(surfaceCapabilities);
             uint32_t minImageCount = chooseSwapMinImageCount(surfaceCapabilities);
             std::vector<vk::SurfaceFormatKHR> availableFormats = physicalDevice.getSurfaceFormatsKHR(*surface);
-            std::vector<vk::PresentModeKHR> availablePresentModes = physicalDevice.getSurfacePresentModesKHR();
+            std::vector<vk::PresentModeKHR> availablePresentModes = physicalDevice.getSurfacePresentModesKHR(*surface);
+            vk::PresentModeKHR presentMode = chooseSwapPresentMode(availablePresentModes);
             auto swapChainSurfaceFormat = chooseSwapSurfaceFormat(availableFormats);
             vk::SwapchainCreateInfoKHR swapChainCreateInfo{.surface = *surface,
                                                            .minImageCount = minImageCount,
@@ -299,7 +303,7 @@ class  hellotriangle
                                                            .imageSharingMode = vk::SharingMode::eExclusive,
                                                            .preTransform = surfaceCapabilities.currentTransform,
                                                            .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
-                                                           .presentMode = chooseSwapPresentMode(availablePresentModes),
+                                                           .presentMode = presentMode,
                                                            .clipped = true
 
             };
@@ -309,6 +313,7 @@ class  hellotriangle
         //surfaec options
         vk::SurfaceFormatKHR chooseSwapSurfaceFormat(std::vector<vk::SurfaceFormatKHR> const &availableFormats)
         {
+            assert(!availableFormats.empty());
             const auto formatIt = std::ranges::find_if(availableFormats,[](const auto &format){return format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear;});
             return formatIt != availableFormats.end() ? *formatIt : availableFormats[0];
         }
