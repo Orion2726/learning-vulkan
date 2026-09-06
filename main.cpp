@@ -1,3 +1,4 @@
+#include <cassert>
 #include <cstdlib>
 #include <limits>
 #include <vulkan/vulkan_core.h>
@@ -9,6 +10,7 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include<fstream>
 #include<stdexcept>
 #define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 #define VK_USE_PLATFORM_WAYLAND_KHR
@@ -48,6 +50,8 @@ class  hellotriangle
         vk::Extent2D               swapChainExtent;
         vk::SurfaceFormatKHR       swapChainSurfaceFormat;
         std::vector<vk::Image>     swapChainImages;
+        std::vector<vk::raii::ImageView>     swapChainImagesViews;
+
 
         GLFWwindow                              *windowp = nullptr;
         vk::raii::SurfaceKHR                     surface = nullptr;
@@ -77,6 +81,8 @@ class  hellotriangle
             pickPhysicalDevice();
             createLogicalDevice();
             createSwapChain();
+            createImageViews();
+            createGraphicsPipeline();
         }
         void mainLoop()
         {
@@ -292,7 +298,11 @@ class  hellotriangle
             std::vector<vk::SurfaceFormatKHR> availableFormats = physicalDevice.getSurfaceFormatsKHR(*surface);
             std::vector<vk::PresentModeKHR> availablePresentModes = physicalDevice.getSurfacePresentModesKHR(*surface);
             vk::PresentModeKHR presentMode = chooseSwapPresentMode(availablePresentModes);
-            auto swapChainSurfaceFormat = chooseSwapSurfaceFormat(availableFormats);
+            swapChainSurfaceFormat = chooseSwapSurfaceFormat(availableFormats);
+            if(swapChainSurfaceFormat.format == vk::Format::eUndefined)
+            {
+                std::cerr << "swapChainSurfaceFormat.format is Undefined at createSwapChain" << std::endl;
+            }
             vk::SwapchainCreateInfoKHR swapChainCreateInfo{.surface = *surface,
                                                            .minImageCount = minImageCount,
                                                            .imageFormat = swapChainSurfaceFormat.format,
@@ -345,6 +355,55 @@ class  hellotriangle
                 minImageCount = surfaceCapabilities.maxImageCount;
             }
             return minImageCount;
+        }
+        //Image View
+        void createImageViews()
+        {
+            assert(swapChainImagesViews.empty());
+            if(swapChainSurfaceFormat.format == vk::Format::eUndefined)
+            {
+                std::cerr << "swapChainSurfaceFormat.format is Undefined in createImageView" << std::endl;
+            }
+            vk::ImageViewCreateInfo imageViewCreateInfo{
+                .viewType = vk::ImageViewType::e2D,
+                .format = vk::Format::eB8G8R8A8Srgb,
+                .components = {vk::ComponentSwizzle::eIdentity,vk::ComponentSwizzle::eIdentity,vk::ComponentSwizzle::eIdentity,vk::ComponentSwizzle::eIdentity},
+                .subresourceRange = {vk::ImageAspectFlagBits::eColor,0,1,0,1}
+            };
+
+
+            for(auto &image : swapChainImages)
+            {
+                imageViewCreateInfo.image = image;
+                swapChainImagesViews.emplace_back(logicalDevice,imageViewCreateInfo);
+            }
+        }
+        //graphics pipeline
+        static std::vector<char> readFile(const std::string& filename)
+        {
+            std::ifstream file(filename,std::ios::ate | std::ios::binary);
+            if(!file.is_open())
+            {
+                throw std::runtime_error("Failed to open file!");
+            }
+            std::vector<char> buffer(file.tellg());
+            file.seekg(0,std::ios::beg);
+            file.read(buffer.data(),static_cast<std::streamsize>(buffer.size()));
+            file.close();
+            return buffer;
+        }
+        [[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const
+        {
+            vk::ShaderModuleCreateInfo createInfo{.codeSize = code.size() * sizeof(char),.pCode = reinterpret_cast<const uint32_t*>(code.data())};
+            vk::raii::ShaderModule shaderModule{logicalDevice,createInfo};
+            return shaderModule;
+        }
+        void createGraphicsPipeline()
+        {
+            vk::raii::ShaderModule shaderModule = createShaderModule(readFile("slang.spv"));
+            vk::PipelineShaderStageCreateInfo vertShaderInfo{.stage = vk::ShaderStageFlagBits::eVertex,.module = shaderModule,.pName = "vertMain"};
+            vk::PipelineShaderStageCreateInfo fragShaderInfo{.stage = vk::ShaderStageFlagBits::eFragment,.module = shaderModule,.pName = "fragMain"};
+            vk::PipelineShaderStageCreateInfo shaderStages[] = {vertShaderInfo,fragShaderInfo};
         }
 };
 int main()
