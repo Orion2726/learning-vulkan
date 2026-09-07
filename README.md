@@ -1,7 +1,7 @@
-#Vulkan sandbox
+## Vulkan sandbox
 
 Repo will contail the code i write while i play around with vulkan 
 
-#Resources
+## Resources
 
 -https://docs.vulkan.org/tutorial/latest/00_Introduction.html
