@@ -1,6 +1,6 @@
 ## Vulkan sandbox
 
-Repo will contail the code i write while i play around with vulkan 
+Repo will contain the code i write while i play around with vulkan 
 
 ## Resources
 
